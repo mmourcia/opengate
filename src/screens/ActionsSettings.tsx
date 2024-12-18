@@ -32,7 +32,7 @@ const ActionsSettings = ({ navigation }: { navigation: any }) => {
   useEffect(() => {
     loadActions();
     const unsubscribe = eventService.onActionsUpdated(loadActions);
-    return () => unsubscribe();
+    return unsubscribe;
   }, []);
 
   const handleDeleteAction = async (id: string) => {
@@ -49,51 +49,57 @@ const ActionsSettings = ({ navigation }: { navigation: any }) => {
     navigation.navigate('EditAction', { action: item });
   };
 
-  const renderActionItem = ({ item }: { item: ActionConfig }) => (
-    <TouchableOpacity 
-      style={styles.actionItem}
-      onPress={() => {/* TODO: Navigate to edit action */}}
-    >
-      <View style={styles.actionHeader}>
-        <Icon name="touch-app" size={24} color="#007AFF" />
-        <Text style={styles.actionName}>{item.name}</Text>
-      </View>
-      <View style={styles.actionDetails}>
-        <Text style={styles.detailText}>URL: {item.url}</Text>
-        <Text style={styles.detailText}>Method: {item.method}</Text>
-        <Text style={styles.detailText}>
-          Auth: {item.authType === 'none' ? 'None' : item.authType}
-        </Text>
-      </View>
-      <View style={styles.actionButtons}>
-        <TouchableOpacity 
-          style={styles.editButton}
-          onPress={() => handleEditPress(item)}
-        >
-          <Icon name="edit" size={20} color="#007AFF" />
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.deleteButton}
-          onPress={() => {
-            Alert.alert(
-              'Delete Action',
-              'Are you sure you want to delete this action?',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { 
-                  text: 'Delete', 
-                  onPress: () => handleDeleteAction(item.id),
-                  style: 'destructive'
-                },
-              ]
-            );
-          }}
-        >
-          <Icon name="delete" size={20} color="#FF3B30" />
-        </TouchableOpacity>
-      </View>
-    </TouchableOpacity>
-  );
+  const renderActionItem = ({ item }: { item: ActionConfig }) => {
+    if (!item?.config) {
+      return null;
+    }
+
+    return (
+      <TouchableOpacity 
+        style={styles.actionItem}
+        onPress={() => handleEditPress(item)}
+      >
+        <View style={styles.actionHeader}>
+          <Icon name="touch-app" size={24} color="#007AFF" />
+          <Text style={styles.actionName}>{item.name}</Text>
+        </View>
+        <View style={styles.actionDetails}>
+          <Text style={styles.detailText}>URL: {item.config.url}</Text>
+          <Text style={styles.detailText}>Method: {item.config.method}</Text>
+          <Text style={styles.detailText}>
+            Auth: {item.config.authType === 'none' ? 'None' : item.config.authType}
+          </Text>
+        </View>
+        <View style={styles.actionButtons}>
+          <TouchableOpacity 
+            style={styles.editButton}
+            onPress={() => handleEditPress(item)}
+          >
+            <Icon name="edit" size={20} color="#007AFF" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.deleteButton}
+            onPress={() => {
+              Alert.alert(
+                'Delete Action',
+                'Are you sure you want to delete this action?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Delete', 
+                    onPress: () => handleDeleteAction(item.id),
+                    style: 'destructive'
+                  },
+                ]
+              );
+            }}
+          >
+            <Icon name="delete" size={20} color="#FF3B30" />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>

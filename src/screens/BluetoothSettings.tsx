@@ -14,8 +14,8 @@ import {
 import { BleManager, Device } from 'react-native-ble-plx';
 import { StoredDevice } from '../types/device';
 import { deviceRepository } from '../repositories/deviceRepository';
-
-const manager = new BleManager();
+import { buttonEventService } from '../services/eventService';
+import { Buffer } from 'buffer';
 
 interface ButtonPayload {
   CHARACTERISTIC_UUID: string;
@@ -27,17 +27,25 @@ interface ButtonPayload {
 const BUTTON_SERVICE_UUID = "12345678-1234-1234-1234-123456789012"; // Replace with your device's service UUID
 const BUTTON_CHARACTERISTIC_UUID = "87654321-4321-4321-4321-210987654321";
 
+// Create BleManager instance outside component
+const manager = new BleManager();
+
 const BluetoothSettings = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [isEnabled, setIsEnabled] = useState(false);
   const [storedDevices, setStoredDevices] = useState<StoredDevice[]>([]);
+  const [isManagerInitialized, setIsManagerInitialized] = useState(false);
 
   useEffect(() => {
     loadStoredDevices();
   }, []);
 
   useEffect(() => {
+    if (isManagerInitialized) {
+      return;
+    }
+
     const initBluetooth = async () => {
       const hasPermissions = await requestPermissions();
       if (!hasPermissions) {
@@ -122,67 +130,58 @@ const BluetoothSettings = () => {
 
     setIsScanning(true);
     setDevices([]);
+    const discoveredDevices = new Set<string>();
     console.log('Starting BLE scan...');
 
     try {
-      const discoveredDevices = new Set<string>();
-
-      manager.startDeviceScan(null, {
-        allowDuplicates: true,
-        scanMode: 2,
-        callbackType: 1,
-        matchMode: 1,
-        matchNum: 0,
-        phy: 1,
-      }, async (error, device) => {
-        if (error) {
-          console.error('Scanning error:', error);
-          setIsScanning(false);
-          Alert.alert('Error', 'Failed to scan for devices');
-          return;
-        }
-
-        if (device && !discoveredDevices.has(device.id)) {
-          discoveredDevices.add(device.id);
-          
-          // Try to get the device name in different ways
-          let deviceName = device.name;
-          
-          if (!deviceName) {
-            try {
-              deviceName = device.localName || 'Unknown';
-            } catch (nameError) {
-              console.log('Could not read name for device:', device.id);
-            }
+      manager.startDeviceScan(
+        null,
+        {
+          allowDuplicates: false,
+          scanMode: Platform.OS === 'android' ? 2 : undefined,
+        },
+        (error, scannedDevice) => {
+          if (error) {
+            console.error('Scanning error:', error);
+            setIsScanning(false);
+            Alert.alert('Error', 'Failed to scan for devices');
+            return;
           }
 
-          console.log('New device discovered:', {
-            name: deviceName || 'Unknown',
-            id: device.id,
-            rssi: device.rssi,
-            localName: device.localName,
-          });
-
-          setDevices(prevDevices => {
-            const deviceExists = prevDevices.some(d => d.id === device.id);
-            if (!deviceExists) {
-              return [...prevDevices, device];
+          if (scannedDevice && !discoveredDevices.has(scannedDevice.id)) {
+            discoveredDevices.add(scannedDevice.id);
+            
+            let deviceName = scannedDevice.name;
+            if (!deviceName) {
+              try {
+                deviceName = scannedDevice.localName || 'Unknown';
+              } catch (nameError) {
+                console.log('Could not read name for device:', scannedDevice.id);
+              }
             }
-            return prevDevices;
-          });
+
+            console.log('New device discovered:', {
+              name: deviceName,
+              id: scannedDevice.id,
+              rssi: scannedDevice.rssi,
+            });
+
+            setDevices(prevDevices => [...prevDevices, scannedDevice]);
+          }
         }
-      });
+      );
+
+      setTimeout(() => {
+        console.log('Stopping scan...');
+        manager.stopDeviceScan();
+        setIsScanning(false);
+      }, 15000);
+
     } catch (error) {
       console.error('Error starting scan:', error);
       Alert.alert('Error', 'Failed to start Bluetooth scan');
       setIsScanning(false);
     }
-
-    setTimeout(() => {
-      console.log('Stopping BLE scan. Total unique devices found:', devices.length);
-      manager.stopDeviceScan();
-      setIsScanning(false);
-    }, 15000);
   };
 
   const connectToDevice = async (device: Device) => {
@@ -191,39 +190,22 @@ const BluetoothSettings = () => {
       setIsScanning(false);
       manager.stopDeviceScan();
 
-      const connectedDevice = await device.connect();
+      const connectedDevice = await device.connect({
+        requestMTU: 517 // Request larger MTU size
+      });
       console.log('Connected to device:', device.id);
+
+      // Request MTU update
+      if (Platform.OS === 'android') {
+        await connectedDevice.requestMTU(517);
+        console.log('Requested MTU update to 517');
+      }
 
       const discoveredDevice = await connectedDevice.discoverAllServicesAndCharacteristics();
       console.log('Discovered services and characteristics');
 
-      // Subscribe to notifications
-      await discoveredDevice.monitorCharacteristicForService(
-        BUTTON_SERVICE_UUID,
-        BUTTON_CHARACTERISTIC_UUID,
-        (error, characteristic) => {
-          if (error) {
-            console.error('Notification error:', error);
-            return;
-          }
-
-          if (characteristic?.value) {
-            try {
-              // Decode base64 value to string
-              const decoded = Buffer.from(characteristic.value, 'base64').toString('utf8');
-              const payload: ButtonPayload = JSON.parse(decoded);
-              
-              console.log('Button Press Detected:', {
-                type: payload.TYPE,
-                timestamp: payload.TIMESTAMP,
-                macAddress: payload.MAC_ADDRESS
-              });
-            } catch (e) {
-              console.error('Error parsing notification:', e);
-            }
-          }
-        }
-      );
+      // Setup button press monitoring
+      await monitorButtonPress(discoveredDevice);
 
       Alert.alert(
         'Connection Successful',
@@ -245,8 +227,7 @@ const BluetoothSettings = () => {
       // Store device after successful connection
       await deviceRepository.storeDevice({
         id: device.id,
-        name: device.name || device.localName || 'Unknown Device',
-        autoConnect: true
+        name: device.name || device.localName || 'Unknown Device'
       });
       await loadStoredDevices();
     } catch (error) {
@@ -319,6 +300,101 @@ const BluetoothSettings = () => {
         await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY));
         return connectWithRetry(deviceId, attempts + 1);
       }
+      throw error;
+    }
+  };
+
+  const monitorButtonPress = async (device: Device) => {
+    let messageBuffer = '';
+    let bufferTimeout: NodeJS.Timeout | null = null;
+    const MESSAGE_TIMEOUT = 500; // Increased timeout for chunked messages
+
+    const clearBuffer = () => {
+      messageBuffer = '';
+      if (bufferTimeout) {
+        clearTimeout(bufferTimeout);
+        bufferTimeout = null;
+      }
+    };
+
+    try {
+      console.log('Setting up button press monitoring for device:', device.id);
+      
+      await device.monitorCharacteristicForService(
+        BUTTON_SERVICE_UUID,
+        BUTTON_CHARACTERISTIC_UUID,
+        (error, characteristic) => {
+          if (error) {
+            console.error('Button press notification error:', error);
+            return;
+          }
+
+          if (characteristic?.value) {
+            try {
+              const decoded = Buffer.from(characteristic.value, 'base64').toString('utf8');
+              console.log('Raw decoded chunk:', decoded);
+
+              // Handle keep-alive messages
+              if (decoded === 'keep-alive') {
+                console.log('Received keep-alive from device:', device.id);
+                clearBuffer();
+                return;
+              }
+
+              // Reset timeout
+              if (bufferTimeout) {
+                clearTimeout(bufferTimeout);
+              }
+
+              // If we receive a new message start, clear the buffer
+              if (decoded.includes('{')) {
+                messageBuffer = '';
+              }
+
+              // Append chunk to buffer
+              messageBuffer += decoded;
+              console.log('Current buffer state:', messageBuffer);
+
+              // Set timeout for message completion
+              bufferTimeout = setTimeout(() => {
+                if (messageBuffer) {
+                  try {
+                    // Extract JSON if present
+                    const jsonStart = messageBuffer.indexOf('{');
+                    const jsonEnd = messageBuffer.lastIndexOf('}');
+                    
+                    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+                      const jsonStr = messageBuffer.substring(jsonStart, jsonEnd + 1);
+                      const payload: ButtonPayload = JSON.parse(jsonStr);
+                      console.log('Complete message received:', {
+                        type: payload.TYPE,
+                        timestamp: new Date(parseInt(payload.TIMESTAMP) * 1000).toISOString(),
+                        macAddress: payload.MAC_ADDRESS,
+                        characteristicUuid: payload.CHARACTERISTIC_UUID
+                      });
+                      buttonEventService.emitButtonPress(payload.TYPE);
+                    } else {
+                      console.log('No valid JSON found in buffer:', messageBuffer);
+                    }
+                  } catch (parseError) {
+                    console.error('Error parsing message:', parseError);
+                  }
+                  clearBuffer();
+                }
+              }, MESSAGE_TIMEOUT);
+
+            } catch (e) {
+              console.error('Error processing notification:', e);
+              console.error('Current buffer:', messageBuffer);
+              clearBuffer();
+            }
+          }
+        }
+      );
+
+      console.log('Button press monitoring setup complete for device:', device.id);
+    } catch (error) {
+      console.error('Failed to setup button press monitoring:', error);
       throw error;
     }
   };

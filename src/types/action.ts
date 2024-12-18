@@ -1,15 +1,17 @@
 export interface ActionConfig {
   id: string;
   name: string;
-  url: string;
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
-  headers: Record<string, string>;
-  payload?: string;
-  authType: 'none' | 'basic' | 'bearer';
-  authToken?: string;
+  type: 'HTTP_REQUEST';
+  config: {
+    url: string;
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+    headers: Record<string, string>;
+    authType: 'none' | 'basic' | 'bearer';
+    body?: any;
+  };
+  triggerType: 'SINGLE' | 'DOUBLE';
   lastExecution?: {
-    timestamp: number;
     success: boolean;
-    error?: string;
+    timestamp: string;
   };
 } 

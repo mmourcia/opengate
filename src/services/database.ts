@@ -28,12 +28,10 @@ export class DatabaseService {
       CREATE TABLE IF NOT EXISTS actions (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        url TEXT NOT NULL,
-        method TEXT NOT NULL,
-        headers TEXT,
-        payload TEXT,
-        authType TEXT NOT NULL,
-        authToken TEXT
+        type TEXT NOT NULL,
+        triggerType TEXT NOT NULL,
+        config TEXT NOT NULL,
+        lastExecution TEXT
       );
     `;
 
@@ -41,6 +39,23 @@ export class DatabaseService {
       await this.database?.executeSql(createActionTableQuery);
     } catch (error) {
       console.error('Error creating tables:', error);
+      throw error;
+    }
+  }
+
+  async deleteDatabase(): Promise<void> {
+    try {
+      if (this.database) {
+        await this.database.close();
+        this.database = null;
+      }
+      await SQLite.deleteDatabase({
+        name: 'ActionDatabase.db',
+        location: 'default'
+      });
+      console.log('Database deleted successfully');
+    } catch (error) {
+      console.error('Error deleting database:', error);
       throw error;
     }
   }

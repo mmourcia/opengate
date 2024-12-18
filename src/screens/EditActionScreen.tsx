@@ -23,9 +23,9 @@ const EditActionScreen = ({ route, navigation }: { route: any; navigation: any }
   }
 
   const [name, setName] = useState(action.name);
-  const [url, setUrl] = useState(action.url);
-  const [method, setMethod] = useState<ActionConfig['method']>(action.method);
-  const [payload, setPayload] = useState(action.payload || '');
+  const [url, setUrl] = useState(action.config.url);
+  const [method, setMethod] = useState<ActionConfig['config']['method']>(action.config.method);
+  const [payload, setPayload] = useState(action.config.body || '');
 
   const handleSave = async () => {
     if (!name || !url) {
@@ -37,15 +37,22 @@ const EditActionScreen = ({ route, navigation }: { route: any; navigation: any }
       const updatedAction: ActionConfig = {
         ...action,
         name,
-        url,
-        method,
-        payload: method === 'POST' ? payload : undefined,
+        type: 'HTTP_REQUEST',
+        config: {
+          url,
+          method,
+          headers: {},
+          authType: 'none',
+          body: method === 'POST' ? payload : undefined,
+        },
+        triggerType: action.triggerType
       };
 
       await actionRepository.updateAction(updatedAction);
       eventService.emitActionsUpdated();
       navigation.goBack();
     } catch (error) {
+      console.error('Error updating action:', error);
       Alert.alert('Error', 'Failed to update action');
     }
   };
@@ -73,7 +80,7 @@ const EditActionScreen = ({ route, navigation }: { route: any; navigation: any }
         <View style={styles.pickerContainer}>
           <Picker
             selectedValue={method}
-            onValueChange={(value: ActionConfig['method']) => setMethod(value)}
+            onValueChange={(value: ActionConfig['config']['method']) => setMethod(value)}
             style={styles.picker}
           >
             <Picker.Item label="GET" value="GET" />

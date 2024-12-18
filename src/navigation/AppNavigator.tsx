@@ -1,5 +1,4 @@
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import HomePage from '../screens/HomePage';
@@ -47,61 +46,37 @@ const SettingsTabs = () => {
   );
 };
 
-const SettingsStack = () => {
-  return (
-    <Stack.Navigator>
-      <Stack.Screen 
-        name="SettingsTabs" 
-        component={SettingsTabs}
-        options={{ headerShown: false }}
-      />
-      <Stack.Screen 
-        name="AddAction" 
-        component={AddActionScreen}
-        options={{ title: 'Add New Action' }}
-      />
-      <Stack.Screen 
-        name="EditAction" 
-        component={EditActionScreen}
-        options={{ title: 'Edit Action' }}
-      />
-    </Stack.Navigator>
-  );
-};
+const MainTabs = () => (
+  <Tab.Navigator>
+    <Tab.Screen 
+      name="HomeTab" 
+      component={HomePage}
+      options={{
+        title: 'Home',
+        tabBarIcon: ({ color }) => <Icon name="home" size={24} color={color} />
+      }}
+    />
+    <Tab.Screen 
+      name="SettingsTab" 
+      component={SettingsTabs}
+      options={{
+        title: 'Settings',
+        tabBarIcon: ({ color }) => <Icon name="settings" size={24} color={color} />
+      }}
+    />
+  </Tab.Navigator>
+);
 
-const AppNavigator = () => {
-  return (
-    <NavigationContainer>
-      <Tab.Navigator
-        screenOptions={{
-          tabBarActiveTintColor: '#007AFF',
-          tabBarInactiveTintColor: '#8E8E93',
-          headerShown: true,
-        }}
-      >
-        <Tab.Screen
-          name="Home"
-          component={HomePage}
-          options={{
-            tabBarIcon: ({ color, size }) => (
-              <Icon name="door-front" size={size} color={color} />
-            ),
-            headerTitle: 'Open Gate',
-          }}
-        />
-        <Tab.Screen
-          name="Settings"
-          component={SettingsStack}
-          options={{
-            tabBarIcon: ({ color, size }) => (
-              <Icon name="tune" size={size} color={color} />
-            ),
-            headerTitle: 'Settings',
-          }}
-        />
-      </Tab.Navigator>
-    </NavigationContainer>
-  );
-};
+const AppNavigator = () => (
+  <Stack.Navigator>
+    <Stack.Screen 
+      name="Main" 
+      component={MainTabs}
+      options={{ headerShown: false }}
+    />
+    <Stack.Screen name="AddAction" component={AddActionScreen} />
+    <Stack.Screen name="EditAction" component={EditActionScreen} />
+  </Stack.Navigator>
+);
 
 export default AppNavigator; 

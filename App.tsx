@@ -6,35 +6,48 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './src/navigation/AppNavigator';
+import { actionRepository } from './src/repositories/actionRepository';
+import { actionExecutor } from './src/services/actionExecutor';
 import { databaseService } from './src/services/database';
+import { bleService } from './src/services/bleService';
 import { View, ActivityIndicator } from 'react-native';
 
-function App(): React.JSX.Element {
-  const [isDbReady, setIsDbReady] = useState(false);
+const App = () => {
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    initDb();
+    const initializeApp = async () => {
+      try {
+        await databaseService.initDatabase();
+        const actions = await actionRepository.getAllActions();
+        actionExecutor.initialize(actions);
+        bleService.initialize();
+        console.log('App initialization complete');
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initializeApp();
   }, []);
 
-  const initDb = async () => {
-    try {
-      await databaseService.initDatabase();
-      setIsDbReady(true);
-    } catch (error) {
-      console.error('Failed to initialize database:', error);
-    }
-  };
-
-  if (!isDbReady) {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
   }
 
-  return <AppNavigator />;
-}
+  return (
+    <NavigationContainer>
+      <AppNavigator />
+    </NavigationContainer>
+  );
+};
 
 export default App;

@@ -5,19 +5,18 @@ import { databaseService } from '../services/database';
 export class ActionRepository {
   async createAction(action: ActionConfig): Promise<void> {
     const query = `
-      INSERT INTO actions (id, name, url, method, headers, payload, authType, authToken)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO actions (id, name, type, triggerType, config, lastExecution)
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
     const params = [
       action.id,
       action.name,
-      action.url,
-      action.method,
-      JSON.stringify(action.headers),
-      action.payload || null,
-      action.authType,
-      action.authToken || null,
+      action.type,
+      action.triggerType,
+      JSON.stringify(action.config),
+      action.lastExecution ? JSON.stringify(action.lastExecution) : null
     ];
+
     try {
       await databaseService.getDatabase()?.executeSql(query, params);
     } catch (error) {
@@ -29,7 +28,11 @@ export class ActionRepository {
   async getAllActions(): Promise<ActionConfig[]> {
     const query = 'SELECT * FROM actions';
     try {
-      const [results] = await databaseService.getDatabase()?.executeSql(query) || [[]];
+      const database = databaseService.getDatabase();
+      if (!database) {
+        throw new Error('Database not initialized');
+      }
+      const [results] = await database.executeSql(query);
       return this.mapResultsToActions(results);
     } catch (error) {
       console.error('Error getting actions:', error);
@@ -40,17 +43,14 @@ export class ActionRepository {
   async updateAction(action: ActionConfig): Promise<void> {
     const query = `
       UPDATE actions
-      SET name = ?, url = ?, method = ?, headers = ?, payload = ?, authType = ?, authToken = ?
+      SET name = ?, type = ?, triggerType = ?, config = ?
       WHERE id = ?
     `;
     const params = [
       action.name,
-      action.url,
-      action.method,
-      JSON.stringify(action.headers),
-      action.payload || null,
-      action.authType,
-      action.authToken || null,
+      action.type,
+      action.triggerType,
+      JSON.stringify(action.config),
       action.id,
     ];
 
@@ -75,17 +75,26 @@ export class ActionRepository {
   private mapResultsToActions(results: SQLite.ResultSet): ActionConfig[] {
     const actions: ActionConfig[] = [];
     for (let i = 0; i < results.rows.length; i++) {
-      const row = results.rows.item(i);
-      actions.push({
-        id: row.id,
-        name: row.name,
-        url: row.url,
-        method: row.method as ActionConfig['method'],
-        headers: JSON.parse(row.headers),
-        payload: row.payload,
-        authType: row.authType as ActionConfig['authType'],
-        authToken: row.authToken,
-      });
+      try {
+        const row = results.rows.item(i);
+        const config = typeof row.config === 'string' ? JSON.parse(row.config) : row.config;
+        const lastExecution = row.lastExecution ? 
+          (typeof row.lastExecution === 'string' ? JSON.parse(row.lastExecution) : row.lastExecution) 
+          : undefined;
+
+        actions.push({
+          id: row.id,
+          name: row.name,
+          type: row.type as 'HTTP_REQUEST',
+          triggerType: row.triggerType as 'SINGLE' | 'DOUBLE',
+          config,
+          lastExecution
+        });
+      } catch (error) {
+        console.error('Error parsing action data:', error);
+        // Skip invalid entries
+        continue;
+      }
     }
     return actions;
   }

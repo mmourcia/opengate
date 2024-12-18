@@ -11,10 +11,10 @@ import {
 import { ActionConfig } from '../types/action';
 import { actionRepository } from '../repositories/actionRepository';
 
-const AddActionScreen = ({ navigation }) => {
+const AddActionScreen = ({ navigation }: { navigation: any }) => {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
-  const [method, setMethod] = useState<ActionConfig['method']>('GET');
+  const [method, setMethod] = useState<ActionConfig['config']['method']>('GET');
 
   const handleSave = async () => {
     if (!name || !url) {
@@ -26,10 +26,14 @@ const AddActionScreen = ({ navigation }) => {
       const newAction: ActionConfig = {
         id: Date.now().toString(),
         name,
-        url,
-        method,
-        headers: {},
-        authType: 'none',
+        type: 'HTTP_REQUEST',
+        config: {
+          url,
+          method,
+          headers: {},
+          authType: 'none'
+        },
+        triggerType: 'SINGLE'
       };
 
       await actionRepository.createAction(newAction);
