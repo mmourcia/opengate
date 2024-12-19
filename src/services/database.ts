@@ -2,61 +2,56 @@ import SQLite from 'react-native-sqlite-storage';
 
 SQLite.enablePromise(true);
 
-export class DatabaseService {
+class DatabaseService {
   private database: SQLite.SQLiteDatabase | null = null;
-
-  public getDatabase(): SQLite.SQLiteDatabase | null {
-    return this.database;
-  }
 
   async initDatabase(): Promise<void> {
     try {
       const db = await SQLite.openDatabase({
-        name: 'ActionDatabase.db',
+        name: 'opengate.db',
         location: 'default',
       });
       this.database = db;
       await this.createTables();
+      console.log('Database initialized successfully');
     } catch (error) {
       console.error('Error initializing database:', error);
       throw error;
     }
   }
 
+  getDatabase(): SQLite.SQLiteDatabase | null {
+    return this.database;
+  }
+
   private async createTables(): Promise<void> {
-    const createActionTableQuery = `
-      CREATE TABLE IF NOT EXISTS actions (
+    if (!this.database) {
+      throw new Error('Database not initialized');
+    }
+
+    const queries = [
+      `CREATE TABLE IF NOT EXISTS actions (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         type TEXT NOT NULL,
         triggerType TEXT NOT NULL,
         config TEXT NOT NULL,
         lastExecution TEXT
-      );
-    `;
+      );`,
+      `CREATE TABLE IF NOT EXISTS button_mappings (
+        id TEXT PRIMARY KEY,
+        buttonId TEXT NOT NULL,
+        buttonName TEXT NOT NULL,
+        characteristicUuid TEXT NOT NULL,
+        pressType TEXT NOT NULL,
+        actionId TEXT NOT NULL,
+        actionName TEXT NOT NULL,
+        FOREIGN KEY (actionId) REFERENCES actions (id) ON DELETE CASCADE
+      );`
+    ];
 
-    try {
-      await this.database?.executeSql(createActionTableQuery);
-    } catch (error) {
-      console.error('Error creating tables:', error);
-      throw error;
-    }
-  }
-
-  async deleteDatabase(): Promise<void> {
-    try {
-      if (this.database) {
-        await this.database.close();
-        this.database = null;
-      }
-      await SQLite.deleteDatabase({
-        name: 'ActionDatabase.db',
-        location: 'default'
-      });
-      console.log('Database deleted successfully');
-    } catch (error) {
-      console.error('Error deleting database:', error);
-      throw error;
+    for (const query of queries) {
+      await this.database.executeSql(query);
     }
   }
 }

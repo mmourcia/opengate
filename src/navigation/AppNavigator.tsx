@@ -8,6 +8,9 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AddActionScreen from '../screens/AddActionScreen';
 import EditActionScreen from '../screens/EditActionScreen';
+import ButtonMappingsScreen from '../screens/ButtonMappingsScreen';
+import AddMappingScreen from '../screens/AddMappingScreen';
+import { TouchableOpacity, Text } from 'react-native';
 
 const Tab = createBottomTabNavigator();
 const TopTab = createMaterialTopTabNavigator();
@@ -39,6 +42,16 @@ const SettingsTabs = () => {
           tabBarLabel: 'Actions',
           tabBarIcon: ({ color }) => (
             <Icon name="vpn-key" size={24} color={color} />
+          ),
+        }}
+      />
+      <TopTab.Screen 
+        name="Mappings" 
+        component={ButtonMappingsScreen}
+        options={{ 
+          tabBarLabel: 'Mappings',
+          tabBarIcon: ({ color }) => (
+            <Icon name="link" size={24} color={color} />
           ),
         }}
       />
@@ -76,6 +89,16 @@ const AppNavigator = () => (
     />
     <Stack.Screen name="AddAction" component={AddActionScreen} />
     <Stack.Screen name="EditAction" component={EditActionScreen} />
+    <Stack.Screen 
+      name="ButtonMappings" 
+      component={ButtonMappingsScreen}
+      options={{ title: 'Button Mappings' }}
+    />
+    <Stack.Screen 
+      name="AddMapping" 
+      component={AddMappingScreen}
+      options={{ title: 'Add New Mapping' }}
+    />
   </Stack.Navigator>
 );
 

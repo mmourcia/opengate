@@ -14,7 +14,7 @@ import {
 import { BleManager, Device } from 'react-native-ble-plx';
 import { StoredDevice } from '../types/device';
 import { deviceRepository } from '../repositories/deviceRepository';
-import { buttonEventService } from '../services/buttonEventService';
+import { buttonEventService } from '../services/eventService';
 import { Buffer } from 'buffer';
 
 interface ButtonPayload {
@@ -33,11 +33,11 @@ const manager = new BleManager();
 const BluetoothSettings = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
-  const [isEnabled, setIsEnabled] = useState(false);
   const [storedDevices, setStoredDevices] = useState<StoredDevice[]>([]);
+  const [isEnabled, setIsEnabled] = useState(false);
   const [isManagerInitialized, setIsManagerInitialized] = useState(false);
-  const [isMonitoring, setIsMonitoring] = useState<{ [key: string]: boolean }>({});
-  const monitoringRef = useRef<{ [key: string]: boolean }>({});
+  const [isMonitoring, setIsMonitoring] = useState<{[key: string]: boolean}>({});
+  const monitoringRef = useRef<{[key: string]: boolean}>({});
 
   useEffect(() => {
     loadStoredDevices();
@@ -238,8 +238,12 @@ const BluetoothSettings = () => {
   };
 
   const loadStoredDevices = async () => {
-    const devices = await deviceRepository.getStoredDevices();
-    setStoredDevices(devices);
+    try {
+      const devices = await deviceRepository.getStoredDevices();
+      setStoredDevices(devices);
+    } catch (error) {
+      console.error('Error loading stored devices:', error);
+    }
   };
 
   const renderDevice = (device: Device) => {
@@ -308,47 +312,14 @@ const BluetoothSettings = () => {
 
   const monitorButtonPress = async (device: Device) => {
     let messageBuffer = '';
-    let lastProcessedTimestamp = '';
     let bufferTimeout: NodeJS.Timeout | null = null;
-    const MESSAGE_TIMEOUT = 100; // Reduced timeout
+    const MESSAGE_TIMEOUT = 500;
 
     const clearBuffer = () => {
       messageBuffer = '';
       if (bufferTimeout) {
         clearTimeout(bufferTimeout);
         bufferTimeout = null;
-      }
-    };
-
-    const processMessage = (jsonStr: string) => {
-      try {
-        const payload: ButtonPayload = JSON.parse(jsonStr);
-        
-        // Add debounce time check instead of exact timestamp match
-        const currentTime = parseInt(payload.TIMESTAMP);
-        const lastTime = parseInt(lastProcessedTimestamp || '0');
-        
-        // Only process if more than 1 second has passed since last press
-        if (currentTime - lastTime < 1) {
-          console.log('Skipping press - too soon after last press');
-          return;
-        }
-        
-        lastProcessedTimestamp = payload.TIMESTAMP;
-        console.log('Complete message received:', {
-          type: payload.TYPE,
-          timestamp: new Date(currentTime * 1000).toISOString(),
-          macAddress: payload.MAC_ADDRESS,
-          characteristicUuid: payload.CHARACTERISTIC_UUID
-        });
-        
-        buttonEventService.emitButtonPress(
-          payload.TYPE,
-          device.id,
-          payload.CHARACTERISTIC_UUID
-        );
-      } catch (parseError) {
-        console.error('Error parsing message:', parseError);
       }
     };
 
@@ -367,47 +338,53 @@ const BluetoothSettings = () => {
           if (characteristic?.value) {
             try {
               const decoded = Buffer.from(characteristic.value, 'base64').toString('utf8');
-              console.log('Raw decoded chunk:', decoded);
-
-              // Handle keep-alive messages
+              
               if (decoded === 'keep-alive') {
                 console.log('Received keep-alive from device:', device.id);
                 clearBuffer();
                 return;
               }
 
-              // If we receive a complete JSON message, process it immediately
-              if (decoded.startsWith('{') && decoded.endsWith('}')) {
-                processMessage(decoded);
-                return;
-              }
-
-              // Reset timeout
               if (bufferTimeout) {
                 clearTimeout(bufferTimeout);
               }
 
-              // If we receive a new message start, clear the buffer
               if (decoded.includes('{')) {
                 messageBuffer = '';
               }
 
-              // Append chunk to buffer
               messageBuffer += decoded;
-              console.log('Current buffer state:', messageBuffer);
 
-              // Process immediately if we have a complete JSON
-              const jsonStart = messageBuffer.indexOf('{');
-              const jsonEnd = messageBuffer.lastIndexOf('}');
-              if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-                const jsonStr = messageBuffer.substring(jsonStart, jsonEnd + 1);
-                processMessage(jsonStr);
-                clearBuffer();
-                return;
-              }
+              bufferTimeout = setTimeout(() => {
+                if (messageBuffer) {
+                  try {
+                    const jsonStart = messageBuffer.indexOf('{');
+                    const jsonEnd = messageBuffer.lastIndexOf('}');
+                    
+                    if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+                      const jsonStr = messageBuffer.substring(jsonStart, jsonEnd + 1);
+                      const payload: ButtonPayload = JSON.parse(jsonStr);
+                      console.log('Complete message received:', {
+                        type: payload.TYPE,
+                        timestamp: new Date(parseInt(payload.TIMESTAMP) * 1000).toISOString(),
+                        macAddress: payload.MAC_ADDRESS,
+                        characteristicUuid: payload.CHARACTERISTIC_UUID
+                      });
+                      
+                      // Pass all required parameters to emitButtonPress
+                      buttonEventService.emitButtonPress(
+                        payload.TYPE,
+                        device.id,
+                        payload.CHARACTERISTIC_UUID
+                      );
+                    }
+                  } catch (parseError) {
+                    console.error('Error parsing message:', parseError);
+                  }
+                  clearBuffer();
+                }
+              }, MESSAGE_TIMEOUT);
 
-              // Set timeout for incomplete messages
-              bufferTimeout = setTimeout(clearBuffer, MESSAGE_TIMEOUT);
             } catch (e) {
               console.error('Error processing notification:', e);
               clearBuffer();
@@ -423,42 +400,91 @@ const BluetoothSettings = () => {
     }
   };
 
-  const requestBluetoothPermissions = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-        ]);
-        
-        return Object.values(granted).every(
-          permission => permission === PermissionsAndroid.RESULTS.GRANTED
-        );
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
+  const setupMonitoring = async (device: Device) => {
+    if (isMonitoring[device.id]) {
+      console.log('Already monitoring device:', device.id);
+      return;
     }
-    return true;
-  };
 
-  const startMonitoring = async (device: Device) => {
     try {
-      // Request permissions first
-      const permissionsGranted = await requestBluetoothPermissions();
-      if (!permissionsGranted) {
-        console.log('Bluetooth permissions not granted');
-        return;
-      }
-
-      // Your existing monitoring code
       setIsMonitoring(prev => ({ ...prev, [device.id]: true }));
       monitoringRef.current[device.id] = true;
-      // ... rest of your existing code ...
+
+      const setupMonitor = async () => {
+        while (monitoringRef.current[device.id]) {
+          try {
+            // Ensure device is disconnected before attempting new connection
+            try {
+              await device.cancelConnection();
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (error) {
+              // Ignore disconnection errors
+            }
+
+            // Connect and monitor
+            await connectWithRetry(device.id);
+            console.log('Starting new monitoring session for device:', device.id);
+            await monitorButtonPress(device);
+            
+            if (monitoringRef.current[device.id]) {
+              console.log('Monitoring session ended, waiting before reconnect...');
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+          } catch (error) {
+            console.error('Error in monitoring session:', error);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+      };
+
+      setupMonitor();
     } catch (error) {
       console.error('Failed to setup monitoring:', error);
       setIsMonitoring(prev => ({ ...prev, [device.id]: false }));
       monitoringRef.current[device.id] = false;
+    }
+  };
+
+  const stopMonitoring = (deviceId: string) => {
+    console.log('Stopping monitoring for device:', deviceId);
+    setIsMonitoring(prev => ({ ...prev, [deviceId]: false }));
+    monitoringRef.current[deviceId] = false;
+  };
+
+  useEffect(() => {
+    return () => {
+      // Cleanup monitoring on component unmount
+      Object.keys(monitoringRef.current).forEach(deviceId => {
+        monitoringRef.current[deviceId] = false;
+      });
+    };
+  }, []);
+
+  const renderStoredDevice = (device: StoredDevice) => (
+    <TouchableOpacity 
+      key={device.id} 
+      style={[styles.deviceItem, styles.storedDevice]}
+      onPress={() => handleStoredDeviceConnection(device)}
+    >
+      <View style={styles.deviceInfo}>
+        <Text style={styles.deviceName}>
+          {device.name} (Paired)
+        </Text>
+        <Text style={styles.deviceId}>ID: {device.id}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const handleStoredDeviceConnection = async (storedDevice: StoredDevice) => {
+    try {
+      console.log('Attempting to connect to stored device:', storedDevice.id);
+      await connectWithRetry(storedDevice.id);
+    } catch (error) {
+      console.error('Connection failed for stored device:', error);
+      Alert.alert(
+        'Connection Error',
+        'Failed to connect to stored device. Try scanning for devices.'
+      );
     }
   };
 
@@ -477,7 +503,19 @@ const BluetoothSettings = () => {
       </TouchableOpacity>
 
       <ScrollView style={styles.deviceList}>
-        {devices.map(renderDevice)}
+        {storedDevices.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>Paired Devices</Text>
+            {storedDevices.map(renderStoredDevice)}
+          </View>
+        )}
+        
+        {devices.length > 0 && (
+          <View>
+            <Text style={styles.sectionTitle}>Discovered Devices</Text>
+            {devices.map(renderDevice)}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -535,7 +573,17 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   storedDevice: {
-    backgroundColor: '#e0e0e0',
+    borderWidth: 1,
+    borderColor: '#007AFF',
+    backgroundColor: '#F0F8FF',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
 });
 

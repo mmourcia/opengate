@@ -17,23 +17,35 @@ import { eventService } from '../services/eventService';
 
 type NavigationProp = NativeStackNavigationProp<any>;
 
-const ActionsSettings = ({ navigation }: { navigation: any }) => {
+const ActionsSettings = () => {
   const [actions, setActions] = useState<ActionConfig[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const navigation = useNavigation<NavigationProp>();
 
   const loadActions = async () => {
     try {
       const loadedActions = await actionRepository.getAllActions();
       setActions(loadedActions);
     } catch (error) {
+      console.error('Error loading actions:', error);
       Alert.alert('Error', 'Failed to load actions');
     }
   };
 
   useEffect(() => {
     loadActions();
-    const unsubscribe = eventService.onActionsUpdated(loadActions);
-    return unsubscribe;
-  }, []);
+    const unsubscribeActions = eventService.onActionsUpdated(loadActions);
+    
+    // Add focus listener
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      loadActions();
+    });
+    
+    return () => {
+      unsubscribeActions();
+      unsubscribeFocus();
+    };
+  }, [navigation]);
 
   const handleDeleteAction = async (id: string) => {
     try {

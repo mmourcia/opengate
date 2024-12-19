@@ -6,10 +6,15 @@ import { actionRepository } from '../repositories/actionRepository';
 import { actionExecutor } from '../services/actionExecutor';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { eventService } from '../services/eventService';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+
+type NavigationProp = NativeStackNavigationProp<any>;
 
 const HomePage = () => {
   const [actions, setActions] = useState<ActionConfig[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const navigation = useNavigation<NavigationProp>();
 
   const loadActions = async () => {
     try {
@@ -23,9 +28,20 @@ const HomePage = () => {
 
   useEffect(() => {
     loadActions();
-    const unsubscribe = eventService.onActionsUpdated(loadActions);
-    return () => unsubscribe();
-  }, []);
+    const unsubscribeActions = eventService.onActionsUpdated(loadActions);
+    const unsubscribeMappings = eventService.onMappingsUpdated(loadActions);
+    
+    // Add focus listener
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      loadActions();
+    });
+    
+    return () => {
+      unsubscribeActions();
+      unsubscribeMappings();
+      unsubscribeFocus();
+    };
+  }, [navigation]);
 
   const handleActionPress = async (action: ActionConfig) => {
     try {

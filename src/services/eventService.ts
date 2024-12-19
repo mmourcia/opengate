@@ -2,9 +2,11 @@ import { EventEmitter } from 'events';
 
 export class EventService {
   private eventEmitter: EventEmitter;
+  private maxListeners = 20;
 
   constructor() {
     this.eventEmitter = new EventEmitter();
+    this.eventEmitter.setMaxListeners(this.maxListeners);
   }
 
   onActionsUpdated(callback: () => void) {
@@ -16,14 +18,14 @@ export class EventService {
     this.eventEmitter.emit('actionsUpdated');
   }
 
-  onButtonPress(callback: (type: 'SINGLE' | 'DOUBLE') => void) {
-    this.eventEmitter.on('buttonPress', callback);
+  onMappingsUpdated(callback: () => void) {
+    this.eventEmitter.on('mappingsUpdated', callback);
+    return () => this.eventEmitter.off('mappingsUpdated', callback);
   }
 
-  emitButtonPress(type: 'SINGLE' | 'DOUBLE') {
-    this.eventEmitter.emit('buttonPress', type);
+  emitMappingsUpdated() {
+    this.eventEmitter.emit('mappingsUpdated');
   }
 }
 
 export const eventService = new EventService();
-export const buttonEventService = eventService;

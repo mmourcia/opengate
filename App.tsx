@@ -21,8 +21,7 @@ const App = () => {
     const initializeApp = async () => {
       try {
         await databaseService.initDatabase();
-        const actions = await actionRepository.getAllActions();
-        actionExecutor.initialize(actions);
+        await actionExecutor.initialize();
         bleService.initialize();
         console.log('App initialization complete');
       } catch (error) {
